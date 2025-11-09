@@ -1,0 +1,14 @@
+[project]
+name = "jenkins-agent"
+version = "0.1.0"
+description = "Jenkins log analysis agent using LangGraph and MCP"
+requires-python = ">=3.12"
+dependencies = [
+    "streamlit>=1.31.0",
+    "langchain>=0.1.0",
+    "langchain-openai>=0.0.5",
+    "langchain-core>=0.1.0",
+    "python-jenkins>=1.8.0",
+    "jenkinsapi>=0.3.14",
+]
+
