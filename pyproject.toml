@@ -10,5 +10,7 @@ dependencies = [
     "langchain-core>=0.1.0",
     "python-jenkins>=1.8.0",
     "jenkinsapi>=0.3.14",
+    "langchain-mcp-adapters>=0.1.13",
+    "langgraph-cli[inmem]>=0.4.7",
 ]
 

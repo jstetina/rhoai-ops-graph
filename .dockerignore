@@ -27,9 +27,6 @@ Thumbs.db
 # Streamlit
 .streamlit/
 
-# Local config (should use environment variables instead)
-config.env
-
 # Logs
 *.log
 

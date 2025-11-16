@@ -1,0 +1,113 @@
+# Podman Compose for Jenkins AI with Agent Chat UI
+#
+# Usage:
+#   1. Ensure config.env is filled with your values #   2. Run: podman-compose --env-file config.env up --build
+#   3. Access Chat UI at: http://localhost:3000
+#   4. LangGraph API at: http://localhost:2024
+#
+# The chat UI connects to both:
+#   - "agent" (interactive_agent.py) - for general chat
+#   - "analysis_agent" (analysis_agent.py) - for log analysis
+#
+version: '3.8'
+
+services:
+  # PostgreSQL for LangGraph state persistence
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: langgraph
+      POSTGRES_USER: langgraph
+      POSTGRES_PASSWORD: langgraph
+    volumes:
+      - postgres_data:/var/lib/postgresql/data:z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langgraph"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis for LangGraph task queue
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data:z
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # LangGraph server for the agents
+  langgraph-server:
+    build:
+      context: .
+      dockerfile: containers/Containerfile.agents
+    ports:
+      - "2024:8000"
+    environment:
+      DATABASE_URI: postgresql://langgraph:langgraph@postgres:5432/langgraph
+      REDIS_URI: redis://redis:6379
+      JENKINS_URL: ${JENKINS_URL}
+      JENKINS_USER: ${JENKINS_USER}
+      JENKINS_PASSWORD: ${JENKINS_PASSWORD}
+      # Use the container path where MCP server is installed - this is the path to the MCP server in the container
+      JENKINS_SERVER_PATH: /deps/jenkins-mcp
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.7}
+      LANGGRAPH_API_URL: ${LANGGRAPH_API_URL:-http://localhost:2024}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Agent Chat UI
+  agent-chat-ui:
+    build:
+      context: .
+      dockerfile: containers/Containerfile.chat-ui
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:2024
+        NEXT_PUBLIC_ASSISTANT_ID: agent
+    ports:
+      - "3000:3000"
+    environment:
+      # For production API passthrough (optional)
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGGRAPH_API_URL=http://langgraph-server:2024
+      # Public vars (baked into build, but can override)
+      - NEXT_PUBLIC_API_URL=http://localhost:2024
+      - NEXT_PUBLIC_ASSISTANT_ID=agent
+    depends_on:
+      langgraph-server:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: jenkins-ai-network
+

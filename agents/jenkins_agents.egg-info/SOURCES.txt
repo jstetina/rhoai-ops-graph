@@ -1,0 +1,6 @@
+pyproject.toml
+jenkins_agents.egg-info/PKG-INFO
+jenkins_agents.egg-info/SOURCES.txt
+jenkins_agents.egg-info/dependency_links.txt
+jenkins_agents.egg-info/requires.txt
+jenkins_agents.egg-info/top_level.txt
