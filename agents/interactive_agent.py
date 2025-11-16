@@ -10,7 +10,9 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 from langchain.agents.middleware import wrap_tool_call
+from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain_core.messages import ToolMessage
+from langgraph.checkpoint.memory import InMemorySaver
 from dotenv import load_dotenv
 from datetime import datetime
 
@@ -78,11 +80,25 @@ class JenkinsInteractiveAgent:
         )
 
     def _init_agent(self):
+        # Define which tools require human approval (action tools, not read-only)
+        action_tools = {
+            "start_job": {"allowed_decisions": ["approve", "reject", "edit"]},
+            "enable_job": {"allowed_decisions": ["approve", "reject", "edit"]},
+            "disable_job": {"allowed_decisions": ["approve", "reject", "edit"]},
+            "stop_build": {"allowed_decisions": ["approve", "reject", "edit"]},
+            "provision_cluster": {"allowed_decisions": ["approve", "reject", "edit"]},
+            "run_test_matrix": {"allowed_decisions": ["approve", "reject", "edit"]},
+        }
+        
         self.agent = create_agent( 
             self.llm, 
             tools=[get_date] + self.jenkins_tools,
             system_prompt=SYSTEM_PROMPT,
-            middleware=[handle_tool_errors]
+            middleware=[
+                handle_tool_errors,
+                HumanInTheLoopMiddleware(interrupt_on=action_tools)
+            ],
+            checkpointer=InMemorySaver()
         )
 
     def get_agent(self):
