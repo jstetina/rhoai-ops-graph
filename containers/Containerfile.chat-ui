@@ -28,10 +28,14 @@ COPY --from=clone /app .
 COPY --from=deps /app/node_modules ./node_modules
 
 # Build-time environment variables for Next.js
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+# Use /api for API passthrough - browser connects to chat-ui which proxies to LANGGRAPH_API_URL
+ARG NEXT_PUBLIC_API_URL=/api
 ARG NEXT_PUBLIC_ASSISTANT_ID=agent
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_PUBLIC_ASSISTANT_ID=${NEXT_PUBLIC_ASSISTANT_ID}
+
+# Patch the hardcoded fallback URL in upstream source to use API passthrough
+RUN sed -i 's|http://localhost:2024|/api|g' src/providers/Stream.tsx
 
 # Enable standalone output for Docker
 RUN echo 'const nextConfig = { output: "standalone", experimental: { serverActions: { bodySizeLimit: "10mb" } } }; export default nextConfig;' > next.config.mjs
