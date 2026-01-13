@@ -12,7 +12,10 @@ WORKDIR /app
 # Clone the repository
 FROM base AS clone
 ARG CHAT_UI_VERSION=main
-RUN git clone --depth 1 --branch ${CHAT_UI_VERSION} https://github.com/langchain-ai/agent-chat-ui.git /app
+ARG CHAT_UI_COMMIT=d93ba24
+RUN git clone https://github.com/langchain-ai/agent-chat-ui.git /app && \
+    cd /app && \
+    git checkout ${CHAT_UI_COMMIT}
 
 # Dependencies stage
 FROM base AS deps
@@ -25,7 +28,7 @@ COPY --from=clone /app .
 COPY --from=deps /app/node_modules ./node_modules
 
 # Build-time environment variables for Next.js
-ARG NEXT_PUBLIC_API_URL=http://localhost:2024
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ARG NEXT_PUBLIC_ASSISTANT_ID=agent
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_PUBLIC_ASSISTANT_ID=${NEXT_PUBLIC_ASSISTANT_ID}
