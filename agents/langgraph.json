@@ -1,8 +1,6 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "agent": "./interactive_agent.py:agent",
-    "analysis_agent": "./analysis_agent.py:agent"
-  },
-  "env": ".env"
+    "agent": "./interactive_agent.py:agent"
+  }
 }
