@@ -1,11 +1,10 @@
-# Podman Compose for RHOAI Ops Buddy - Development
+# Podman Compose for RHOAI Ops Buddy - Production
 #
-# Builds images locally for development.
-# For production, use compose.prod.yml with pre-built images from quay.io/ops-buddy
+# Uses pre-built images from quay.io/ops-buddy
 #
 # Usage:
 #   1. Ensure config.env is filled with your values
-#   2. Run: podman-compose --env-file config.env up --build
+#   2. Run: podman-compose -f compose.prod.yml --env-file config.env up
 #   3. Access Chat UI at: http://localhost:3000
 #   4. LangGraph API at: http://localhost:8000
 #
@@ -43,9 +42,7 @@ services:
 
   # Cluster Monitor MCP Server
   cluster-monitor:
-    build:
-      context: ../rhoai-cluster-monitor-mcp
-      dockerfile: Containerfile
+    image: quay.io/ops-buddy/rhoai-cluster-monitor-mcp:latest
     ports:
       - "8001:8000"
     environment:
@@ -68,9 +65,7 @@ services:
 
   # Jenkins MCP Server
   jenkins-mcp:
-    build:
-      context: ../rhoai-jenkins-mcp
-      dockerfile: Containerfile
+    image: quay.io/ops-buddy/rhoai-jenkins-mcp:latest
     ports:
       - "8002:8000"
     environment:
@@ -89,13 +84,10 @@ services:
 
   # LangGraph server for the agents
   langgraph-server:
-    build:
-      context: .
-      dockerfile: containers/Containerfile.agents
+    image: quay.io/ops-buddy/rhoai-ops-graph:latest
     ports:
       - "8000:8000"
     extra_hosts:
-      # Allow container to reach services on the host machine
       - "host.containers.internal:host-gateway"
     environment:
       DATABASE_URI: postgresql://langgraph:langgraph@postgres:5432/langgraph
@@ -125,19 +117,12 @@ services:
 
   # Agent Chat UI
   agent-chat-ui:
-    build:
-      context: .
-      dockerfile: containers/Containerfile.chat-ui
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-        NEXT_PUBLIC_ASSISTANT_ID: agent
+    image: quay.io/ops-buddy/chat-ui:latest
     ports:
       - "3000:3000"
     environment:
-      # For production API passthrough (optional)
       - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
       - LANGGRAPH_API_URL=http://langgraph-server:8000
-      # Public vars (baked into build, but can override)
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
       - NEXT_PUBLIC_ASSISTANT_ID=agent
     depends_on:
@@ -158,4 +143,3 @@ volumes:
 networks:
   default:
     name: rhoai-ops-buddy-network
-
