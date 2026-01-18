@@ -106,6 +106,9 @@ services:
       LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.7}
       LANGGRAPH_API_URL: ${LANGGRAPH_API_URL:-http://localhost:8000}
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
+      MCP_CONFIG_PATH: /app/config/mcp_servers.json
+    volumes:
+      - ./mcp_servers.json:/app/config/mcp_servers.json:ro,z
     depends_on:
       postgres:
         condition: service_healthy
