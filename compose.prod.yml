@@ -43,6 +43,7 @@ services:
   # Cluster Monitor MCP Server
   cluster-monitor:
     image: quay.io/ops-buddy/rhoai-cluster-monitor-mcp:latest
+    pull_policy: always
     ports:
       - "8001:8000"
     environment:
@@ -66,6 +67,7 @@ services:
   # Jenkins MCP Server
   jenkins-mcp:
     image: quay.io/ops-buddy/rhoai-jenkins-mcp:latest
+    pull_policy: always
     ports:
       - "8002:8000"
     environment:
@@ -85,6 +87,7 @@ services:
   # LangGraph server for the agents
   langgraph-server:
     image: quay.io/ops-buddy/rhoai-ops-graph:latest
+    pull_policy: always
     ports:
       - "8000:8000"
     extra_hosts:
@@ -121,6 +124,7 @@ services:
   # Agent Chat UI - uses API passthrough (browser -> chat-ui/api -> langgraph-server)
   agent-chat-ui:
     image: quay.io/ops-buddy/chat-ui:latest
+    pull_policy: always
     ports:
       - "3000:3000"
     environment:
