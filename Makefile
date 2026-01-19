@@ -49,7 +49,10 @@ push-ops-graph:
 	$(ENGINE) push $(REGISTRY)/rhoai-ops-graph:$(TAG)
 
 push-chat-ui:
-	$(ENGINE) build -t $(REGISTRY)/chat-ui:$(TAG) -f containers/Containerfile.chat-ui .
+	$(ENGINE) build -t $(REGISTRY)/chat-ui:$(TAG) \
+		--build-arg NEXT_PUBLIC_API_URL=$(NEXT_PUBLIC_API_URL) \
+		--build-arg NEXT_PUBLIC_ASSISTANT_ID=agent \
+		-f containers/Containerfile.chat-ui .
 	$(ENGINE) push $(REGISTRY)/chat-ui:$(TAG)
 
 push-jenkins-mcp:
