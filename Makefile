@@ -2,37 +2,72 @@ ENGINE ?= podman
 REGISTRY ?= quay.io/ops-buddy
 TAG ?= latest
 
-.PHONY: up down restart debug debug-no-cache build push prod-up prod-down
+# Configuration files
+DEV_ENV ?= config/dev.env
+PROD_ENV ?= config/prod.env
 
-default: up
+# Chat UI build-time variables (override via env or command line)
+# Example: make push-chat-ui NEXT_PUBLIC_API_URL=https://ops-buddy.apps.cluster.example.com/api
+NEXT_PUBLIC_API_URL ?= /api
+NEXT_PUBLIC_ASSISTANT_ID ?= agent
 
-# Development targets (build locally)
-up:
-	$(ENGINE) compose -f compose.yml --env-file config.env up -d --build
+.PHONY: dev-up dev-down dev-restart dev-rebuild dev-debug dev-debug-no-cache \
+	prod-up prod-down build push \
+	push-ops-graph push-chat-ui push-jenkins-mcp push-cluster-monitor \
+	ocp-install ocp-upgrade ocp-uninstall
 
-down:
-	$(ENGINE) compose -f compose.yml --env-file config.env down
+default: dev-up
 
-restart:
-	$(ENGINE) compose -f compose.yml --env-file config.env restart
+# =============================================================================
+# Development targets (build locally, direct browser connection to LangGraph)
+# =============================================================================
+dev-up:
+	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) up -d --build
 
-debug-no-cache:
-	$(ENGINE) compose -f compose.yml --env-file config.env up --build --no-cache
+dev-down:
+	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) down
 
-debug:
-	$(ENGINE) compose -f compose.yml --env-file config.env up --build
+dev-restart:
+	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) restart
 
-# Production targets (use pre-built images)
+dev-debug:
+	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) up --build
+
+dev-debug-no-cache:
+	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) up --build --no-cache
+
+dev-rebuild:
+	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) up -d --build --no-cache
+
+# =============================================================================
+# Production targets (use pre-built images with API passthrough)
+# =============================================================================
 prod-up:
-	$(ENGINE) compose -f compose.prod.yml --env-file config.env up -d
+	$(ENGINE) compose -f compose.prod.yml --env-file $(PROD_ENV) up -d
 
 prod-down:
-	$(ENGINE) compose -f compose.prod.yml --env-file config.env down
+	$(ENGINE) compose -f compose.prod.yml --env-file $(PROD_ENV) down
+
+prod-restart:
+	$(ENGINE) compose -f compose.prod.yml --env-file $(PROD_ENV) restart
+
+# =============================================================================
+# Build and push images
+# =============================================================================
+# Chat UI build args:
+#   NEXT_PUBLIC_API_URL - Browser's API endpoint (default: /api for portability)
+#   NEXT_PUBLIC_ASSISTANT_ID - Assistant ID (default: agent)
+#
+# Override for specific deployments:
+#   make push-chat-ui NEXT_PUBLIC_API_URL=https://ops-buddy.apps.cluster.example.com/api
 
 # Build all images for production
 build:
 	$(ENGINE) build -t $(REGISTRY)/rhoai-ops-graph:$(TAG) -f containers/Containerfile.agents .
-	$(ENGINE) build -t $(REGISTRY)/chat-ui:$(TAG) -f containers/Containerfile.chat-ui .
+	$(ENGINE) build -t $(REGISTRY)/chat-ui:$(TAG) \
+		--build-arg NEXT_PUBLIC_API_URL=$(NEXT_PUBLIC_API_URL) \
+		--build-arg NEXT_PUBLIC_ASSISTANT_ID=$(NEXT_PUBLIC_ASSISTANT_ID) \
+		-f containers/Containerfile.chat-ui .
 	$(ENGINE) build -t $(REGISTRY)/rhoai-jenkins-mcp:$(TAG) -f ../rhoai-jenkins-mcp/Containerfile ../rhoai-jenkins-mcp
 	$(ENGINE) build -t $(REGISTRY)/rhoai-cluster-monitor-mcp:$(TAG) -f ../rhoai-cluster-monitor-mcp/Containerfile ../rhoai-cluster-monitor-mcp
 
@@ -51,7 +86,7 @@ push-ops-graph:
 push-chat-ui:
 	$(ENGINE) build -t $(REGISTRY)/chat-ui:$(TAG) \
 		--build-arg NEXT_PUBLIC_API_URL=$(NEXT_PUBLIC_API_URL) \
-		--build-arg NEXT_PUBLIC_ASSISTANT_ID=agent \
+		--build-arg NEXT_PUBLIC_ASSISTANT_ID=$(NEXT_PUBLIC_ASSISTANT_ID) \
 		-f containers/Containerfile.chat-ui .
 	$(ENGINE) push $(REGISTRY)/chat-ui:$(TAG)
 
