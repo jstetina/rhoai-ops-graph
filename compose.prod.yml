@@ -1,10 +1,11 @@
 # Podman Compose for RHOAI Ops Buddy - Production
 #
-# Uses pre-built images from quay.io/ops-buddy
+# Uses pre-built images from quay.io/ops-buddy.
+# In production mode, chat-ui uses API passthrough (browser -> chat-ui/api -> langgraph).
 #
 # Usage:
-#   1. Ensure config.env is filled with your values
-#   2. Run: podman-compose -f compose.prod.yml --env-file config.env up
+#   1. Copy config/prod.env.template to config/prod.env and fill in your values
+#   2. Run: make prod-up (or: podman-compose -f compose.prod.yml --env-file config/prod.env up)
 #   3. Access Chat UI at: http://localhost:3000
 #   4. LangGraph API at: http://localhost:8000
 #
@@ -13,7 +14,7 @@ version: '3.8'
 services:
   # PostgreSQL for LangGraph state persistence
   postgres:
-    image: postgres:16-alpine
+    image: docker.io/postgres:16-alpine
     environment:
       POSTGRES_DB: langgraph
       POSTGRES_USER: langgraph
@@ -29,7 +30,7 @@ services:
 
   # Redis for LangGraph task queue
   redis:
-    image: redis:7-alpine
+    image: docker.io/redis:7-alpine
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data:z
@@ -90,8 +91,6 @@ services:
     pull_policy: always
     ports:
       - "8000:8000"
-    extra_hosts:
-      - "host.containers.internal:host-gateway"
     environment:
       DATABASE_URI: postgresql://langgraph:langgraph@postgres:5432/langgraph
       REDIS_URI: redis://redis:6379
@@ -99,8 +98,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY}
       LLM_MODEL: ${LLM_MODEL}
       LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.7}
-      LANGGRAPH_API_URL: ${LANGGRAPH_API_URL:-http://localhost:8000}
-      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
       MCP_CONFIG_PATH: /app/config/mcp_servers.json
     volumes:
       - ./mcp_servers.json:/app/config/mcp_servers.json:ro,z
@@ -121,16 +119,19 @@ services:
       retries: 3
       start_period: 40s
 
-  # Agent Chat UI - uses API passthrough (browser -> chat-ui/api -> langgraph-server)
+  # Agent Chat UI - Production mode (API passthrough)
+  # The image is built with NEXT_PUBLIC_API_URL=/api for API passthrough
+  # Browser -> chat-ui /api/* -> langgraph-server
   agent-chat-ui:
     image: quay.io/ops-buddy/chat-ui:latest
     pull_policy: always
     ports:
       - "3000:3000"
     environment:
-      # API passthrough config - chat-ui proxies /api requests to langgraph-server
-      - LANGGRAPH_API_URL=http://langgraph-server:8000
-      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      # API passthrough: chat-ui proxies /api requests to langgraph-server
+      # Default to internal service name; override in prod.env if chat-ui runs externally
+      LANGGRAPH_API_URL: ${LANGGRAPH_API_URL:-http://langgraph-server:8000}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
     depends_on:
       langgraph-server:
         condition: service_healthy

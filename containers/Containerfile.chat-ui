@@ -1,7 +1,16 @@
 # Containerfile for LangChain Agent Chat UI
 # Based on https://github.com/langchain-ai/agent-chat-ui
+#
+# Production Setup (API Passthrough):
+#   - NEXT_PUBLIC_API_URL=/api is baked in at build time
+#   - Browser connects to chat-ui, which proxies /api/* to LANGGRAPH_API_URL
+#   - Runtime env vars: LANGGRAPH_API_URL, LANGSMITH_API_KEY
+#
+# Development Setup:
+#   - Pass --build-arg NEXT_PUBLIC_API_URL=http://localhost:8000 at build time
+#   - Browser connects directly to LangGraph server
 
-FROM node:20-alpine AS base
+FROM docker.io/node:20-alpine AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
@@ -9,9 +18,8 @@ RUN apk add --no-cache git
 
 WORKDIR /app
 
-# Clone the repository
+# Clone the repository at a specific commit for reproducibility
 FROM base AS clone
-ARG CHAT_UI_VERSION=main
 ARG CHAT_UI_COMMIT=d93ba24
 RUN git clone https://github.com/langchain-ai/agent-chat-ui.git /app && \
     cd /app && \
@@ -28,28 +36,30 @@ COPY --from=clone /app .
 COPY --from=deps /app/node_modules ./node_modules
 
 # Build-time environment variables for Next.js
-# Use /api for API passthrough - browser connects to chat-ui which proxies to LANGGRAPH_API_URL
+# Default to /api for API passthrough (production mode)
+# Override with --build-arg for development (direct connection)
 ARG NEXT_PUBLIC_API_URL=/api
 ARG NEXT_PUBLIC_ASSISTANT_ID=agent
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_PUBLIC_ASSISTANT_ID=${NEXT_PUBLIC_ASSISTANT_ID}
 
-# Patch the hardcoded fallback URL in upstream source to use API passthrough
-RUN sed -i 's|http://localhost:2024|/api|g' src/providers/Stream.tsx
-
-# Enable standalone output for Docker
+# Configure Next.js for standalone Docker deployment
+# - standalone: Optimized for container deployment
+# - serverActions.bodySizeLimit: Allow larger payloads for file uploads
 RUN echo 'const nextConfig = { output: "standalone", experimental: { serverActions: { bodySizeLimit: "10mb" } } }; export default nextConfig;' > next.config.mjs
 
 # Build the application
 RUN pnpm run build
 
 # Runner stage - minimal production image
-FROM base AS runner
+FROM docker.io/node:20-alpine AS runner
 ENV NODE_ENV=production
 
-# Create non-root user
+# Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
+
+WORKDIR /app
 
 # Copy necessary files from builder
 COPY --from=builder /app/public ./public
@@ -63,11 +73,14 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Runtime environment variables (set these when running the container)
-# - LANGSMITH_API_KEY: Your LangSmith API key (optional)
-# - LANGGRAPH_API_URL: URL to your LangGraph server for production (optional)
-# - NEXT_PUBLIC_API_URL: Already set at build time
-# - NEXT_PUBLIC_ASSISTANT_ID: Already set at build time
+# Runtime environment variables (set these when running the container):
+#
+# For Production (API Passthrough):
+#   LANGGRAPH_API_URL  - URL to your LangGraph server (e.g., http://langgraph-server:8000)
+#   LANGSMITH_API_KEY  - Your LangSmith API key for authentication
+#
+# Build-time vars (already baked in, typically don't need to override):
+#   NEXT_PUBLIC_API_URL      - Already set (default: /api for passthrough)
+#   NEXT_PUBLIC_ASSISTANT_ID - Already set (default: agent)
 
 CMD ["node", "server.js"]
-
