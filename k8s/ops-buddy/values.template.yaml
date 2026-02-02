@@ -1,0 +1,250 @@
+# RHOAI Ops Buddy Helm Values Template
+# Copy this to values.yaml and fill in your actual values
+#
+# Usage:
+#   cp values.template.yaml values.yaml
+#   # Edit values.yaml with your configuration
+#   helm install ops-buddy . -f values.yaml
+
+# Global settings
+global:
+  imageRegistry: quay.io/ops-buddy
+  imagePullPolicy: Always
+  # Base64 encoded .dockerconfigjson for quay.io pull secret
+  imagePullSecret: ""  # Required: base64 encoded docker config json
+
+# ============================================================================
+# LLM Configuration
+# ============================================================================
+llm:
+  baseUrl: "https://your-llm-endpoint"
+  apiKey: ""  # Required: Your LLM API key
+  model: "qwen2.5-14b-instruct"
+  temperature: "0.7"
+
+# LangSmith for tracing (optional but recommended)
+langsmith:
+  apiKey: ""  # Optional: Your LangSmith API key
+
+# ============================================================================
+# PostgreSQL (LangGraph state persistence)
+# ============================================================================
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  auth:
+    database: langgraph
+    username: langgraph
+    password: langgraph  # Change in production!
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""  # Use default if empty
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# ============================================================================
+# Redis (LangGraph task queue)
+# ============================================================================
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+# ============================================================================
+# Cluster Monitor MCP Server
+# ============================================================================
+clusterMonitor:
+  enabled: true
+  image:
+    repository: ""  # Uses global.imageRegistry/rhoai-cluster-monitor-mcp
+    tag: "latest"
+  replicas: 1
+  port: 8000
+  # Hive cluster configuration
+  hive:
+    context: "hive-cluster"
+    # Mount kubeconfig from a secret
+    kubeconfigSecretName: "hive-kubeconfig"
+    kubeconfigSecretKey: "kubeconfig"
+  # AWS credentials (for cluster access)
+  aws:
+    credentialsSecretName: "aws-credentials"
+    credentialsSecretKey: "credentials"
+    profile: "rhoai"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# ============================================================================
+# Jenkins MCP Server
+# ============================================================================
+jenkinsMcp:
+  enabled: true
+  image:
+    repository: ""  # Uses global.imageRegistry/rhoai-jenkins-mcp
+    tag: "latest"
+  replicas: 1
+  port: 8000
+  # Jenkins credentials
+  jenkins:
+    url: "http://jenkins:8080"
+    user: ""      # Required: Jenkins username
+    password: ""  # Required: Jenkins password or API token
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# ============================================================================
+# LangGraph Server (Main Agent)
+# ============================================================================
+langgraphServer:
+  enabled: true
+  image:
+    repository: ""  # Uses global.imageRegistry/rhoai-ops-graph
+    tag: "latest"
+  replicas: 1
+  port: 8000
+  # MCP servers configuration (JSON content)
+  mcpConfig: |
+    {
+      "supervisor": {
+        "prompt": "You are RHOAI Ops Buddy, an AI operations supervisor for Red Hat OpenShift AI infrastructure.\n\nYou coordinate specialized agents to handle different operational domains."
+      },
+      "servers": {
+        "jenkins": {
+          "connection": {
+            "url": "http://ops-buddy-jenkins-mcp:8000/mcp",
+            "transport": "streamable_http"
+          },
+          "agent": {
+            "name": "jenkins",
+            "tool_name": "jenkins_operations",
+            "tool_description": "Delegate Jenkins CI/CD operations to the specialized Jenkins agent.",
+            "prompt": "You are a Jenkins CI/CD specialist for RHOAI infrastructure."
+          },
+          "approval": {
+            "require_approval": true,
+            "allowed_decisions": ["approve", "reject", "edit"],
+            "description": "Jenkins operation pending approval"
+          }
+        },
+        "cluster-monitor": {
+          "connection": {
+            "url": "http://ops-buddy-cluster-monitor:8000/mcp",
+            "transport": "streamable_http"
+          },
+          "agent": {
+            "name": "cluster_monitor",
+            "tool_name": "cluster_operations",
+            "tool_description": "Delegate cluster monitoring operations to the specialized Cluster Monitor agent.",
+            "prompt": "You are an OpenShift cluster monitoring specialist for RHOAI infrastructure."
+          },
+          "approval": {
+            "require_approval": false
+          }
+        }
+      }
+    }
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+# ============================================================================
+# Chat UI
+# ============================================================================
+chatUi:
+  enabled: true
+  image:
+    repository: ""  # Uses global.imageRegistry/chat-ui
+    tag: "latest"
+  replicas: 1
+  port: 3000
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+# ============================================================================
+# OpenShift Route
+# ============================================================================
+route:
+  enabled: false
+  host: ""  # Leave empty for auto-generated
+  tls:
+    enabled: true
+    termination: edge  # edge, passthrough, reencrypt
+
+# ============================================================================
+# OAuth Configuration (OpenShift OAuth)
+# ============================================================================
+oauth:
+  enabled: true
+  clientSecret: ""  # Generate a random secret
+  redirectUri: ""   # https://ops-buddy-chat-ui-<namespace>.apps.<cluster-domain>
+
+# ============================================================================
+# Service Account
+# ============================================================================
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# ============================================================================
+# Pod Security
+# ============================================================================
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# ============================================================================
+# Node Selection
+# ============================================================================
+nodeSelector: {}
+tolerations: []
+affinity: {}
+

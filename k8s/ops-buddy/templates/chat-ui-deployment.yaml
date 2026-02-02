@@ -1,0 +1,90 @@
+{{- if .Values.chatUi.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ops-buddy.fullname" . }}-chat-ui
+  labels:
+    {{- include "ops-buddy.labels" . | nindent 4 }}
+    app.kubernetes.io/component: chat-ui
+spec:
+  replicas: {{ .Values.chatUi.replicas }}
+  selector:
+    matchLabels:
+      {{- include "ops-buddy.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: chat-ui
+  template:
+    metadata:
+      labels:
+        {{- include "ops-buddy.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: chat-ui
+    spec:
+      {{- include "ops-buddy.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "ops-buddy.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: chat-ui
+          image: {{ include "ops-buddy.image" (dict "root" . "component" .Values.chatUi "defaultRepo" "chat-ui") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.chatUi.port }}
+              protocol: TCP
+          env:
+            - name: LANGGRAPH_API_URL
+              value: {{ printf "http://%s-langgraph-server:%d" (include "ops-buddy.fullname" .) (.Values.langgraphServer.port | int) | quote }}
+            {{- if .Values.langsmith.apiKey }}
+            - name: LANGSMITH_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ops-buddy.fullname" . }}-secrets
+                  key: LANGSMITH_API_KEY
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.chatUi.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ops-buddy.fullname" . }}-chat-ui
+  labels:
+    {{- include "ops-buddy.labels" . | nindent 4 }}
+    app.kubernetes.io/component: chat-ui
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.chatUi.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "ops-buddy.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: chat-ui
+{{- end }}

@@ -1,0 +1,104 @@
+{{- if .Values.jenkinsMcp.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ops-buddy.fullname" . }}-jenkins-mcp
+  labels:
+    {{- include "ops-buddy.labels" . | nindent 4 }}
+    app.kubernetes.io/component: jenkins-mcp
+spec:
+  replicas: {{ .Values.jenkinsMcp.replicas }}
+  selector:
+    matchLabels:
+      {{- include "ops-buddy.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: jenkins-mcp
+  template:
+    metadata:
+      labels:
+        {{- include "ops-buddy.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: jenkins-mcp
+    spec:
+      {{- include "ops-buddy.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "ops-buddy.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: jenkins-mcp
+          image: {{ include "ops-buddy.image" (dict "root" . "component" .Values.jenkinsMcp "defaultRepo" "rhoai-jenkins-mcp") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.jenkinsMcp.port }}
+              protocol: TCP
+          env:
+            - name: HOME
+              value: "/home/app"
+            - name: UVICORN_HOST
+              value: "0.0.0.0"
+            - name: UVICORN_PORT
+              value: {{ .Values.jenkinsMcp.port | quote }}
+            - name: JENKINS_URL
+              value: {{ .Values.jenkinsMcp.jenkins.url | quote }}
+            - name: JENKINS_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ops-buddy.fullname" . }}-secrets
+                  key: JENKINS_USER
+            - name: JENKINS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ops-buddy.fullname" . }}-secrets
+                  key: JENKINS_PASSWORD
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.jenkinsMcp.resources | nindent 12 }}
+          volumeMounts:
+            - name: home
+              mountPath: /home/app
+      volumes:
+        - name: home
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ops-buddy.fullname" . }}-jenkins-mcp
+  labels:
+    {{- include "ops-buddy.labels" . | nindent 4 }}
+    app.kubernetes.io/component: jenkins-mcp
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.jenkinsMcp.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "ops-buddy.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: jenkins-mcp
+{{- end }}
+

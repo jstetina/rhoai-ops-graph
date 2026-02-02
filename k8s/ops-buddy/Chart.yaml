@@ -1,0 +1,17 @@
+apiVersion: v2
+name: ops-buddy
+description: RHOAI Ops Buddy - AI Operations Assistant with LangGraph and MCP tools
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - langgraph
+  - ai
+  - operations
+  - mcp
+  - openshift
+maintainers:
+  - name: RHOAI Team
+home: https://github.com/jstetins/ops-buddy
+sources:
+  - https://github.com/jstetina/ops-buddy

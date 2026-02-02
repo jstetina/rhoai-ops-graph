@@ -97,3 +97,42 @@ push-jenkins-mcp:
 push-cluster-monitor:
 	$(ENGINE) build -t $(REGISTRY)/rhoai-cluster-monitor-mcp:$(TAG) -f ../rhoai-cluster-monitor-mcp/Containerfile ../rhoai-cluster-monitor-mcp
 	$(ENGINE) push $(REGISTRY)/rhoai-cluster-monitor-mcp:$(TAG)
+
+# =============================================================================
+# OpenShift deployment (Helm)
+# =============================================================================
+HELM_RELEASE ?= ops-buddy
+HELM_NAMESPACE ?= rhoai-ops
+HELM_VALUES ?= k8s/ops-buddy/values.yaml
+
+# Extract credential paths from values.yaml
+HIVE_KUBECONFIG := $(shell yq '.clusterMonitor.hive.kubeconfigPath // ""' $(HELM_VALUES))
+AWS_CREDENTIALS := $(shell yq '.clusterMonitor.aws.credentialsPath // ""' $(HELM_VALUES))
+
+# Build --set-file args if credential paths exist and files are readable
+HELM_SET_FILES :=
+ifneq ($(HIVE_KUBECONFIG),)
+ifneq ($(wildcard $(HIVE_KUBECONFIG)),)
+HELM_SET_FILES += --set-file clusterMonitor.hive.kubeconfigContent=$(HIVE_KUBECONFIG)
+endif
+endif
+ifneq ($(AWS_CREDENTIALS),)
+ifneq ($(wildcard $(AWS_CREDENTIALS)),)
+HELM_SET_FILES += --set-file clusterMonitor.aws.credentialsContent=$(AWS_CREDENTIALS)
+endif
+endif
+
+ocp-install:
+	helm install $(HELM_RELEASE) k8s/ops-buddy \
+		--namespace $(HELM_NAMESPACE) \
+		-f $(HELM_VALUES) \
+		$(HELM_SET_FILES)
+
+ocp-upgrade:
+	helm upgrade $(HELM_RELEASE) k8s/ops-buddy \
+		--namespace $(HELM_NAMESPACE) \
+		-f $(HELM_VALUES) \
+		$(HELM_SET_FILES)
+
+ocp-uninstall:
+	helm uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)

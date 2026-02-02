@@ -1,0 +1,21 @@
+{{- if .Values.route.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ops-buddy.fullname" . }}-allow-ingress
+  labels:
+    {{- include "ops-buddy.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ops-buddy.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: chat-ui
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from default OpenShift router
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network.openshift.io/policy-group: ingress
+{{- end }}

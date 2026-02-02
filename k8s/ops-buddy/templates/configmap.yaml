@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ops-buddy.fullname" . }}-config
+  labels:
+    {{- include "ops-buddy.labels" . | nindent 4 }}
+data:
+  # LLM Configuration
+  LLM_BASE_URL: {{ .Values.llm.baseUrl | quote }}
+  LLM_MODEL: {{ .Values.llm.model | quote }}
+  LLM_TEMPERATURE: {{ .Values.llm.temperature | quote }}
+  # Service URLs (internal)
+  LANGGRAPH_API_URL: {{ printf "http://%s-langgraph-server:8000" (include "ops-buddy.fullname" .) | quote }}
+  REDIS_URI: {{ printf "redis://%s-redis:6379" (include "ops-buddy.fullname" .) | quote }}
+  # MCP Config path
+  MCP_CONFIG_PATH: "/app/config/mcp_servers.json"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ops-buddy.fullname" . }}-mcp-config
+  labels:
+    {{- include "ops-buddy.labels" . | nindent 4 }}
+data:
+  mcp_servers.json: |
+{{ .Values.langgraphServer.mcpConfig | indent 4 }}
+

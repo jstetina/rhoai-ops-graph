@@ -1,0 +1,29 @@
+{{- if and .Values.route.enabled .Values.chatUi.enabled }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "ops-buddy.fullname" . }}-chat-ui
+  labels:
+    {{- include "ops-buddy.labels" . | nindent 4 }}
+    app.kubernetes.io/component: chat-ui
+  {{- if .Values.route.routerShard }}
+  annotations:
+    route.openshift.io/router-shard: {{ .Values.route.routerShard }}
+  {{- end }}
+spec:
+  {{- if .Values.route.host }}
+  host: {{ .Values.route.host }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ include "ops-buddy.fullname" . }}-chat-ui
+    weight: 100
+  port:
+    targetPort: http
+  {{- if .Values.route.tls.enabled }}
+  tls:
+    termination: {{ .Values.route.tls.termination }}
+    insecureEdgeTerminationPolicy: Redirect
+  {{- end }}
+  wildcardPolicy: None
+{{- end }}

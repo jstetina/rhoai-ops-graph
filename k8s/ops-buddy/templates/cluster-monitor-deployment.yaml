@@ -1,0 +1,121 @@
+{{- if .Values.clusterMonitor.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ops-buddy.fullname" . }}-cluster-monitor
+  labels:
+    {{- include "ops-buddy.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cluster-monitor
+spec:
+  replicas: {{ .Values.clusterMonitor.replicas }}
+  selector:
+    matchLabels:
+      {{- include "ops-buddy.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: cluster-monitor
+  template:
+    metadata:
+      labels:
+        {{- include "ops-buddy.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: cluster-monitor
+    spec:
+      {{- include "ops-buddy.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "ops-buddy.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: cluster-monitor
+          image: {{ include "ops-buddy.image" (dict "root" . "component" .Values.clusterMonitor "defaultRepo" "rhoai-cluster-monitor-mcp") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              uv run python main.py --transport http --kubeconfig /config/hive/kubeconfig --context {{ .Values.clusterMonitor.hive.context }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.clusterMonitor.port }}
+              protocol: TCP
+          env:
+            - name: UVICORN_HOST
+              value: "0.0.0.0"
+            - name: UVICORN_PORT
+              value: {{ .Values.clusterMonitor.port | quote }}
+            - name: HIVE_KUBECONFIG
+              value: "/config/hive/kubeconfig"
+            - name: HIVE_CONTEXT
+              value: {{ .Values.clusterMonitor.hive.context | quote }}
+            - name: AWS_PROFILE
+              value: {{ .Values.clusterMonitor.aws.profile | quote }}
+            - name: HOME
+              value: "/home/app"
+            - name: AWS_SHARED_CREDENTIALS_FILE
+              value: "/config/aws/credentials"
+          volumeMounts:
+            - name: hive-kubeconfig
+              mountPath: /config/hive
+              readOnly: true
+            - name: aws-credentials
+              mountPath: /config/aws
+              readOnly: true
+            - name: home
+              mountPath: /home/app
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.clusterMonitor.resources | nindent 12 }}
+      volumes:
+        - name: hive-kubeconfig
+          secret:
+            secretName: {{ .Values.clusterMonitor.hive.kubeconfigSecretName }}
+            items:
+              - key: {{ .Values.clusterMonitor.hive.kubeconfigSecretKey }}
+                path: kubeconfig
+        - name: aws-credentials
+          secret:
+            secretName: {{ .Values.clusterMonitor.aws.credentialsSecretName }}
+            items:
+              - key: {{ .Values.clusterMonitor.aws.credentialsSecretKey }}
+                path: credentials
+        - name: home
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ops-buddy.fullname" . }}-cluster-monitor
+  labels:
+    {{- include "ops-buddy.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cluster-monitor
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.clusterMonitor.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "ops-buddy.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: cluster-monitor
+{{- end }}
