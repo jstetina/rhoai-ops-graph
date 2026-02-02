@@ -50,13 +50,13 @@ services:
     environment:
       HIVE_KUBECONFIG: /root/.kube/hive.yaml
       HIVE_CONTEXT: ${HIVE_CONTEXT:-hive-cluster}
-      AWS_PROFILE: rhoai
+      AWS_PROFILE: ${AWS_PROFILE:-rhoai}
       HOME: /root
       UVICORN_HOST: 0.0.0.0
       UVICORN_PORT: 8000
     volumes:
       - ${HIVE_KUBECONFIG_HOST}:/root/.kube/hive.yaml:ro,z
-      - ${HOME}/.aws/credentials:/root/.aws/credentials:ro,z
+      - ${AWS_CREDENTIALS_HOST:-${HOME}/.aws/credentials}:/root/.aws/credentials:ro,z
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "sleep 2"]
