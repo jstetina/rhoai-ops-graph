@@ -1,6 +1,9 @@
 __pycache__/
 .venv/
 *.egg-info/
-config.env
 .env
 mcp_servers.json
+k8s/ops-buddy/values.yaml
+# Environment files (contain secrets, only templates are tracked)
+config/dev.env
+config/prod.env
