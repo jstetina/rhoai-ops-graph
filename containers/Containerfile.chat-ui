@@ -1,5 +1,6 @@
 # Containerfile for LangChain Agent Chat UI
 # Based on https://github.com/langchain-ai/agent-chat-ui
+# Customized fork: https://github.com/jstetina/agent-chat-ui
 #
 # Production Setup (API Passthrough):
 #   - NEXT_PUBLIC_API_URL=/api is baked in at build time
@@ -18,10 +19,10 @@ RUN apk add --no-cache git
 
 WORKDIR /app
 
-# Clone the repository at a specific commit for reproducibility
+# Clone the customized fork at a specific commit for reproducibility
 FROM base AS clone
-ARG CHAT_UI_COMMIT=d93ba24
-RUN git clone https://github.com/langchain-ai/agent-chat-ui.git /app && \
+ARG CHAT_UI_COMMIT=main
+RUN git clone https://github.com/jstetina/agent-chat-ui.git /app && \
     cd /app && \
     git checkout ${CHAT_UI_COMMIT}
 
