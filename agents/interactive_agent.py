@@ -23,7 +23,6 @@ from langchain_core.tools import tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
-from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 from dotenv import load_dotenv
 
@@ -55,84 +54,46 @@ def get_date() -> str:
 # MCP Tools Loading
 # =============================================================================
 
-async def load_mcp_tools(config: Config) -> Dict[str, List]:
+async def load_mcp_tools(config: Config) -> tuple[Dict[str, List], List[MultiServerMCPClient]]:
     """
-    Load all MCP tools from configured servers.
+    Load MCP tools from each configured server individually.
+    
+    Creates a separate MultiServerMCPClient for each server to ensure we know
+    exactly which tools belong to which server while maintaining persistent
+    connections for tool execution.
     
     Args:
         config: Configuration object with server definitions
         
     Returns:
-        Dictionary mapping server_id to list of tools
+        Tuple of (tools_by_server dict, list of MCP clients to keep alive)
     """
     logger.info("Loading MCP tools from configured servers...")
     
-    # Get MCP client configuration
-    mcp_config = config.get_mcp_client_config()
+    tools_by_server: Dict[str, List] = {}
+    clients: List[MultiServerMCPClient] = []
     
-    for server_id, server_config in mcp_config.items():
-        logger.info(f"  {server_id}: {server_config['url']} ({server_config['transport']})")
-    
-    # Create MCP client and get all tools
-    mcp_client = MultiServerMCPClient(mcp_config)
-    all_tools = await mcp_client.get_tools()
-    
-    # Group tools by server
-    # The MCP adapter prefixes tool names with server name, so we can use that
-    # to categorize. If not prefixed, we need to match by known patterns.
-    tools_by_server: Dict[str, List] = {server_id: [] for server_id in config.servers}
-    
-    for mcp_tool in all_tools:
-        tool_name = mcp_tool.name.lower()
-        assigned = False
+    for server_id, server_config in config.servers.items():
+        url = server_config.connection.url
+        transport = server_config.connection.transport
+        logger.info(f"  Connecting to {server_id}: {url} ({transport})")
         
-        # Log detailed tool info for debugging
-        logger.info(f"  MCP Tool: {mcp_tool.name}")
-        args_schema = getattr(mcp_tool, 'args_schema', None)
-        if args_schema:
-            # MCP tools may have dict schemas instead of Pydantic models
-            if isinstance(args_schema, dict):
-                props = args_schema.get('properties', {})
-                logger.info(f"    Parameters (dict): {list(props.keys())}")
-            elif hasattr(args_schema, 'model_json_schema'):
-                try:
-                    schema = args_schema.model_json_schema()
-                    props = schema.get('properties', {})
-                    logger.info(f"    Parameters (pydantic): {list(props.keys())}")
-                except Exception as e:
-                    logger.info(f"    Schema error: {e}")
-            else:
-                logger.info(f"    Schema type: {type(args_schema)}")
-        elif hasattr(mcp_tool, 'args'):
-            logger.info(f"    Args: {mcp_tool.args}")
-        
-        # Try to match tool to server by checking server-specific keywords
-        for server_id in config.servers:
-            # Check if tool name starts with server id (common MCP pattern)
-            if tool_name.startswith(f"{server_id.replace('-', '_')}_"):
-                tools_by_server[server_id].append(mcp_tool)
-                assigned = True
-                break
-        
-        # Fallback: use keyword matching for known tool patterns
-        if not assigned:
-            if any(kw in tool_name for kw in ['cluster', 'hive', 'owner']):
-                tools_by_server["cluster-monitor"].append(mcp_tool)
-                assigned = True
-            elif any(kw in tool_name for kw in ['job', 'build', 'jenkins', 'test_matrix']):
-                tools_by_server["jenkins"].append(mcp_tool)
-                assigned = True
-        
-        # Last resort: assign to first server
-        if not assigned:
-            first_server = list(config.servers.keys())[0]
-            tools_by_server[first_server].append(mcp_tool)
-            logger.warning(f"Tool '{mcp_tool.name}' assigned to default server: {first_server}")
+        try:
+            # Create a single-server client for this server
+            single_server_config = {
+                server_id: {"url": url, "transport": transport}
+            }
+            client = MultiServerMCPClient(single_server_config)
+            tools = await client.get_tools()
+            
+            tools_by_server[server_id] = tools
+            clients.append(client)
+            logger.info(f"  {server_id}: loaded {len(tools)} tools - {[t.name for t in tools]}")
+        except Exception as e:
+            logger.error(f"  {server_id}: failed to load tools - {e}")
+            tools_by_server[server_id] = []
     
-    for server_id, tools in tools_by_server.items():
-        logger.info(f"  {server_id}: {[t.name for t in tools]}")
-    
-    return tools_by_server
+    return tools_by_server, clients
 
 
 # =============================================================================
@@ -182,21 +143,24 @@ class SupervisorAgent:
 
     def _init_agent(self):
         """Initialize the supervisor agent with sub-agent tools."""
-        # Build sub-agents and their tool wrappers
+        # Build approval tools config per server
+        approval_tools_by_server = {
+            server_id: self.config.get_approval_tools_for_server(server_id)
+            for server_id in self.config.servers
+        }
+        
+        # Log tools requiring approval
+        all_approval_tools = self.config.get_all_approval_tools()
+        if all_approval_tools:
+            logger.info(f"Tools requiring approval: {list(all_approval_tools.keys())}")
+        
+        # Build sub-agents and their tool wrappers with per-tool approval
         subagent_tools = build_subagents_and_tools(
             self.llm,
             self.config.servers,
-            self.tools_by_server
+            self.tools_by_server,
+            approval_tools_by_server
         )
-        
-        # Get tools that require human approval
-        approval_tools = self.config.get_approval_tools()
-        logger.info(f"Tools requiring approval: {list(approval_tools.keys())}")
-        
-        # Build middleware stack
-        middleware = [handle_tool_errors]
-        if approval_tools:
-            middleware.append(HumanInTheLoopMiddleware(interrupt_on=approval_tools))
         
         # Create the supervisor agent
         logger.info("Creating Supervisor agent...")
@@ -204,7 +168,7 @@ class SupervisorAgent:
             self.llm,
             tools=[get_date] + subagent_tools,
             system_prompt=self.config.supervisor_prompt,
-            middleware=middleware,
+            middleware=[handle_tool_errors],
             checkpointer=InMemorySaver()
         )
 
@@ -217,8 +181,13 @@ class SupervisorAgent:
 # Agent Builder
 # =============================================================================
 
+# Global list to keep MCP clients alive for the lifetime of the agent
+_mcp_clients: List[MultiServerMCPClient] = []
+
+
 def build_agent():
     """Build and initialize the RHOAI Ops supervisor agent."""
+    global _mcp_clients
     load_dotenv()
     
     # Load configuration from JSON
@@ -227,7 +196,10 @@ def build_agent():
     # Create event loop and load MCP tools
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    tools_by_server = loop.run_until_complete(load_mcp_tools(config))
+    tools_by_server, clients = loop.run_until_complete(load_mcp_tools(config))
+    
+    # Keep clients alive globally
+    _mcp_clients = clients
     
     # Create the supervisor agent
     supervisor = SupervisorAgent(
