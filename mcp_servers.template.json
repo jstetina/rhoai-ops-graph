@@ -15,9 +15,24 @@
         "prompt": "You are a Jenkins CI/CD specialist for RHOAI infrastructure.\n\nYour capabilities include:\n- Listing and searching Jenkins jobs\n- Getting job information and build history\n- Starting, stopping, enabling, and disabling jobs\n- Fetching and analyzing build logs\n- Running test matrix validation jobs\n\nWhen analyzing logs or build failures:\n- Focus on identifying root causes\n- Provide actionable recommendations\n- Highlight critical errors and warnings\n\nAlways provide clear status information and next steps where applicable."
       },
       "approval": {
-        "require_approval": true,
-        "allowed_decisions": ["approve", "reject", "edit"],
-        "description": "Jenkins operation pending approval"
+        "tools": {
+          "build_job": {
+            "allowed_decisions": ["approve", "reject", "edit"],
+            "description": "Starting a Jenkins build requires approval"
+          },
+          "stop_build": {
+            "allowed_decisions": ["approve", "reject"],
+            "description": "Stopping a Jenkins build requires approval"
+          },
+          "enable_job": {
+            "allowed_decisions": ["approve", "reject"],
+            "description": "Enabling a Jenkins job requires approval"
+          },
+          "disable_job": {
+            "allowed_decisions": ["approve", "reject"],
+            "description": "Disabling a Jenkins job requires approval"
+          }
+        }
       }
     },
     "cluster-monitor": {
@@ -32,7 +47,22 @@
         "prompt": "You are an OpenShift cluster monitoring specialist for RHOAI infrastructure.\n\nYour capabilities include:\n- Listing all Hive-managed clusters with filtering options\n- Getting detailed cluster information (platform, region, version, state)\n- Checking cluster health and provisioning status\n- Viewing cluster statistics by platform or state\n- Identifying cluster owners and their resources\n- Testing connectivity to the Hive cluster\n\n**IMPORTANT - Tool Parameters:**\n- When calling list_all_clusters, ALWAYS pass include_details=true if the user wants cluster details (platform, region, version, state, URLs)\n- Use filters like platform_filter, name_filter, state_filter, region_filter, owner_filter to narrow results\n- For get_cluster_details, provide the exact cluster_name\n\nWhen providing cluster information:\n- Present data in a clear, organized format\n- Highlight any clusters in problematic states (Hibernating, ProvisionStopped)\n- Provide context about cluster pools and ownership\n\nAlways verify cluster names and provide helpful suggestions if a cluster is not found."
       },
       "approval": {
-        "require_approval": false
+        "tools": {}
+      }
+    },
+    "slack": {
+      "connection": {
+        "url": "http://slack-mcp:8000/mcp",
+        "transport": "streamable_http"
+      },
+      "agent": {
+        "name": "slack",
+        "tool_name": "slack_operations",
+        "tool_description": "Delegate Slack operations to the specialized Slack agent.\n\nUse this for any Slack-related tasks including:\n- Sending messages to channels\n- Reading channel history\n- Searching messages\n- Managing notifications",
+        "prompt": "You are a Slack communication specialist for RHOAI infrastructure.\n\nYour capabilities include:\n- Sending messages to Slack channels\n- Reading channel message history\n- Searching for messages\n- Managing notifications and alerts\n\nWhen sending messages:\n- Be clear and concise\n- Use appropriate formatting\n- Include relevant context\n\nAlways confirm successful operations and provide helpful feedback."
+      },
+      "approval": {
+        "tools": {}
       }
     }
   }
