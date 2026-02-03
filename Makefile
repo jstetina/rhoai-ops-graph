@@ -6,6 +6,10 @@ TAG ?= latest
 DEV_ENV ?= config/dev.env
 PROD_ENV ?= config/prod.env
 
+# Private registry settings
+SLACK_MCP_IMAGE ?= mirror-registry.osp.rh-ods.com:8443/admin/slack-ops:latest
+TLS_VERIFY ?= false
+
 # Chat UI build-time variables (override via env or command line)
 # Example: make push-chat-ui NEXT_PUBLIC_API_URL=https://ops-buddy.apps.cluster.example.com/api
 NEXT_PUBLIC_API_URL ?= /api
@@ -14,35 +18,43 @@ NEXT_PUBLIC_ASSISTANT_ID ?= agent
 .PHONY: dev-up dev-down dev-restart dev-rebuild dev-debug dev-debug-no-cache \
 	prod-up prod-down build push \
 	push-ops-graph push-chat-ui push-jenkins-mcp push-cluster-monitor \
-	ocp-install ocp-upgrade ocp-uninstall
+	pull-slack-mcp ocp-install ocp-upgrade ocp-uninstall
 
 default: dev-up
 
 # =============================================================================
+# Pull images from private registries (with TLS verification control)
+# =============================================================================
+pull-slack-mcp:
+	$(ENGINE) pull --tls-verify=$(TLS_VERIFY) $(SLACK_MCP_IMAGE)
+
+# =============================================================================
 # Development targets (build locally, direct browser connection to LangGraph)
 # =============================================================================
-dev-up:
-	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) up -d --build
+dev-up: pull-slack-mcp
+	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) up -d
+
+dev-up-no-cache: pull-slack-mcp
+	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) up -d --build --no-cache
 
 dev-down:
 	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) down
 
-dev-restart:
+dev-restart: dev-down dev-up
 	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) restart
 
-dev-debug:
+dev-debug: pull-slack-mcp
 	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) up --build
 
-dev-debug-no-cache:
+dev-debug-no-cache: pull-slack-mcp
 	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) up --build --no-cache
 
-dev-rebuild:
-	$(ENGINE) compose -f compose.yml --env-file $(DEV_ENV) up -d --build --no-cache
+dev-rebuild: dev-down dev-up-no-cache
 
 # =============================================================================
 # Production targets (use pre-built images with API passthrough)
 # =============================================================================
-prod-up:
+prod-up: pull-slack-mcp
 	$(ENGINE) compose -f compose.prod.yml --env-file $(PROD_ENV) up -d
 
 prod-down:

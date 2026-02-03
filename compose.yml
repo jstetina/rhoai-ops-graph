@@ -77,6 +77,23 @@ services:
       JENKINS_URL: ${JENKINS_URL}
       JENKINS_USER: ${JENKINS_USER}
       JENKINS_PASSWORD: ${JENKINS_PASSWORD}
+      JENKINS_SSL_VERIFY: ${JENKINS_SSL_VERIFY:-true}
+      UVICORN_HOST: 0.0.0.0
+      UVICORN_PORT: 8000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "sleep 2"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+  # Slack MCP Server
+  slack-mcp:
+    image: mirror-registry.osp.rh-ods.com:8443/admin/slack-ops:latest
+    ports:
+      - "8003:8000"
+    environment:
       UVICORN_HOST: 0.0.0.0
       UVICORN_PORT: 8000
     restart: unless-stopped
@@ -113,6 +130,8 @@ services:
       cluster-monitor:
         condition: service_healthy
       jenkins-mcp:
+        condition: service_healthy
+      slack-mcp:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
