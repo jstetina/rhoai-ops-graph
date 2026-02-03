@@ -6,7 +6,7 @@ import os
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -32,11 +32,16 @@ class ConnectionConfig:
 
 
 @dataclass
-class ApprovalConfig:
-    """Configuration for human-in-the-loop approval."""
-    require_approval: bool = False
+class ToolApprovalConfig:
+    """Configuration for per-tool human-in-the-loop approval."""
     allowed_decisions: list = field(default_factory=lambda: ["approve", "reject", "edit"])
     description: str = "Operation pending approval"
+
+
+@dataclass
+class ApprovalConfig:
+    """Configuration for human-in-the-loop approval with per-tool granularity."""
+    tools: Dict[str, ToolApprovalConfig] = field(default_factory=dict)
 
 
 @dataclass
@@ -54,6 +59,15 @@ class MCPServerConfig:
         agent_data = data.get("agent", {})
         approval_data = data.get("approval", {})
         
+        # Parse per-tool approval settings
+        tools_approval = {}
+        tools_data = approval_data.get("tools", {})
+        for tool_name, tool_config in tools_data.items():
+            tools_approval[tool_name] = ToolApprovalConfig(
+                allowed_decisions=tool_config.get("allowed_decisions", ["approve", "reject", "edit"]),
+                description=tool_config.get("description", f"{tool_name} pending approval"),
+            )
+        
         return cls(
             server_id=server_id,
             connection=ConnectionConfig(
@@ -67,9 +81,7 @@ class MCPServerConfig:
                 prompt=agent_data.get("prompt", f"You are a specialist for {server_id} operations."),
             ),
             approval=ApprovalConfig(
-                require_approval=approval_data.get("require_approval", False),
-                allowed_decisions=approval_data.get("allowed_decisions", ["approve", "reject", "edit"]),
-                description=approval_data.get("description", "Operation pending approval"),
+                tools=tools_approval,
             ),
         )
 
@@ -90,16 +102,39 @@ class Config:
             for server_id, server in self.servers.items()
         }
     
-    def get_approval_tools(self) -> Dict[str, Dict[str, Any]]:
-        """Get tools that require human approval for HumanInTheLoopMiddleware."""
+    def get_approval_tools_for_server(self, server_id: str) -> Dict[str, Dict[str, Any]]:
+        """
+        Get tools that require human approval for a specific server.
+        
+        Args:
+            server_id: The server ID to get approval tools for
+            
+        Returns:
+            Dictionary mapping tool names to their approval config for HumanInTheLoopMiddleware
+        """
+        server = self.servers.get(server_id)
+        if not server:
+            return {}
+        
         return {
-            server.agent.tool_name: {
-                "allowed_decisions": server.approval.allowed_decisions,
-                "description": server.approval.description,
+            tool_name: {
+                "allowed_decisions": tool_config.allowed_decisions,
+                "description": tool_config.description,
             }
-            for server in self.servers.values()
-            if server.approval.require_approval
+            for tool_name, tool_config in server.approval.tools.items()
         }
+    
+    def get_all_approval_tools(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get all tools across all servers that require human approval.
+        
+        Returns:
+            Dictionary mapping tool names to their approval config
+        """
+        all_tools = {}
+        for server_id in self.servers:
+            all_tools.update(self.get_approval_tools_for_server(server_id))
+        return all_tools
 
 
 def load_config(config_path: Optional[Path] = None) -> Config:

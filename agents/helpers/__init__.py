@@ -13,6 +13,7 @@ from helpers.config import (
     AgentConfig,
     ConnectionConfig,
     ApprovalConfig,
+    ToolApprovalConfig,
     load_config,
 )
 
@@ -31,6 +32,7 @@ __all__ = [
     "AgentConfig",
     "ConnectionConfig",
     "ApprovalConfig",
+    "ToolApprovalConfig",
     "load_config",
     # Middleware
     "handle_tool_errors",
